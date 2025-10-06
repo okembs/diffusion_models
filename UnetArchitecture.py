@@ -8,9 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy
 from attentionVariant import CrossAttention , SelfAttention
+from labml_nn.diffusion.ddpm.utils import gather
 
 #the u net architecture contains the input_channels , out_channels , channels and n_resBlock
-#the attention levels n_heads  , tf_layers d_cond
+#the attention levels: are the levels the model is supposed to perform
+#  n_heads : number of attention heads in the transformer 
+#  , 
+# tf_layers : the number of tf layers
+# d_cond
 
 class Unet(nn.Module) : 
     def __init__(self,  in_channels:int , out_channels:int , channels_multi:list[int]  ,channels:int ,  n_resBlock:int , attention_levels:list[int], n_heads:int, tf_layers:int = 1 , d_cond:int = 768 ):
@@ -42,9 +47,12 @@ class Unet(nn.Module) :
      
      input_block_channels = [channels]
      channels_list = [channels * m for m in channels_multi]
+    
      for i in range(levels) : 
         for _ in range(n_resBlock) : 
+           #residual block maps from the previous block of channel
            layers = [ResBlock(channels , d_time_embd , out_channels=channels_list[i])]
+           print(f'layers are : {layers}')
            channels = channels_list[i]
            # add the attention layers
            if i in attention_levels : 
@@ -55,22 +63,27 @@ class Unet(nn.Module) :
            input_block_channels.append(channels)
 
            if i != levels - 1 : 
-              self.input.append(TimeStepEmbdSequential(DownSample(channels)))
+              self.input_blocks.append(TimeStepEmbdSequential(DownSample(channels)))
               input_block_channels.append(channels)
             
-         
+    # the midddle of the unet architecture
      self.middle_block = TimeStepEmbdSequential(
          ResBlock(channels , d_time_embd),
          SpatialTransformer(channels , n_heads , tf_layers , d_cond),
          ResBlock(channels , d_time_embd)
 
       )
+     # for the second half of the unet
      
      self.output_blocks = nn.ModuleList([])
      for i in reversed(range(levels)) : 
+        # add the residual attention
         for j in range(n_resBlock + 1 ) : 
-           layers = [ResBlock(channels , d_time_embd ,out_channels=channels_list)]
+           layers = [ResBlock(channels + input_block_channels.pop() , d_time_embd , out_channels=channels_list )]
            channels = channels_list[i]
+           print(f'this is the layers in the neural net : {layers}')
+           print(f'channels in the list is : {channels}')
+           print(f'layers are  :{layers}')
 
            if i in attention_levels : 
               layers.append(SpatialTransformer(channels, n_heads, tf_layers , d_cond))
@@ -136,20 +149,27 @@ class TimeStepEmbdSequential(nn.Sequential):
    
 
 
+# this makeup a resnet block
 #for the Resnet block on how to fix it
+# channels : is  the number of input channels 
+# d_temb: is the  number of the timestep embeddings
+# out_channels : is the number of the outchannels
 class ResBlock(nn.Module) : 
-   def __init__(self, channels , d_temd , out_channels=None):
+   def __init__(self, channels , d_temd , out_channels: None | int =None ):
      super().__init__()
+
 
      if out_channels is None : 
         out_channels = channels
+        print(f'out channels is : {out_channels}')
 
 #the first normalization and convolution
      self.in_layers = nn.Sequential(
         normalization(channels),
         nn.SiLU(),
-        nn.Conv2d(channels , out_channels , 3 , padding=1)
+        nn.Conv2d(channels , out_channels, 3, padding=1)
       )
+  
 # for the timeStempEmbeddings
      self.emb_layers = nn.Sequential(
         nn.SiLU(),
@@ -166,7 +186,7 @@ class ResBlock(nn.Module) :
      if out_channels == channels : 
         self.skip_connection = nn.Identity()
      else :
-         self.skip_connection = nn.Conv2d(channels , out_channels)
+         self.skip_connection = nn.Conv2d(channels , out_channels , 1)
 
    def forward(self , x:torch.Tensor , t_emb:torch.Tensor) : 
       h = self.in_layers(x)
@@ -212,7 +232,7 @@ def normalization(channels) :
 #test sinusodial for the timestepembeddings 
 def test_time_embeddings() : 
    plt.figure(figsize=(15 ,5))
-   m = Unet(in_channels=1 , out_channels=1 , channels=320 , n_resBlock=1 , attention_levels=[True , True , False , False] , tf_layers=1 , d_cond=1 , channels_multi= [] , n_heads=1)
+   m = Unet(in_channels=1 , out_channels=1 , channels=320 , n_resBlock=1 , attention_levels=[] , tf_layers=1 , d_cond=1 , channels_multi= [] , n_heads=2)
    te = m.time_step_embeddings(torch.arange(0, 1000))
    plt.plot(np.arange(1000) , te[: , [50 , 100 , 190 , 260]].numpy())
    #plt.legend(['dim %d' % for p in [50 , 100 , 190 , 260]])
@@ -221,10 +241,57 @@ def test_time_embeddings() :
 
 
 print(test_time_embeddings())
+\
 
+#the schedular for the unet arcitecture
 # the denoisoing sampler  for the unet architecture 
 #for denoising the image  or the unet architecture
 # Denoising diffusion probabilistic models
 #eps:epilson , n_steps is t
 class DDPM(nn.Module) : 
-   pass
+    def __init__(self, eps_model:nn.Module , n_steps: int , device:torch.device ):
+          super().__init__()
+          self.eps_model = eps_model
+          self.n_steps = n_steps
+          self.beta = torch.linspace(0.0001, 0.02 , n_steps).to(device)
+          self.alpah = 1 - self.beta
+          self.alpah_bar = torch.cumprod(self.alpah , dim=1)
+          self.sigma = self.beta
+
+    def q_xt_0(self, x:torch.Tensor , t:torch.Tensor):  
+       mean = gather(self.alpah_bar , t) ** 0.5 * x
+       var = 1 - gather(self.aplha_bar , t)
+       return mean , var
+    #add noise to the data
+    def q_sample(self , x0:torch.Tensor , t:torch.Tensor , eps ) : 
+       if eps is None : 
+          eps = torch.rand_like(x0)
+          mean , var = self.q_xt_0(x0 , t)
+          return mean + (var ** 0.5) * eps
+       #denoise the data
+    def p_sample(self , xt:torch.Tensor , t:torch.Tensor) : 
+       eps_theta = self.eps_model(xt , t)
+       alpha_bar = gather(self.alpah_bar ,t)
+       alpha = gather(self.alpah , t)
+       eps_coef = ( 1 - alpha) / ( 1 - alpha) ** .5
+       mean = 1 / (alpha ** 0.5) * (xt - eps_coef * eps_theta)
+       var = gather(self.sigma , t )
+       eps = torch.randn(xt.shape , device=xt.device)
+       #sample 
+       return mean + (var ** .5) * eps 
+    
+    def loss(self , x:torch.Tensor, noise = None) : 
+        batch_size = x.shape[0]
+        t = torch.randint(0 , self.n_steps, (batch_size) , device=x.device , dtype=torch.long)
+        if noise is None : 
+           noise = torch.randn_like(x)
+        xt = self.q_sample(x , t , eps=noise)
+        eps_theta = self.eps_model(xt , t)
+        return F.mse_loss(noise , eps_theta)
+      
+         
+          
+
+       
+    
+       

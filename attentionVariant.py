@@ -47,6 +47,7 @@ class SelfAttention(nn.Module) :
 # d_model : input embedding size
 #n_heads: number of attention heads
 #d_cond : size of attention head
+#d_heads: dimension size of a single attention head
 #is_inplace: specify  whether to perform the attention softmax or save memory
 
 #and we will still define Q(query) , k(keys) and v(values) here
@@ -78,6 +79,7 @@ class CrossAttention(nn.Module) :
         q = self.to_q(x)
         k = self.to_k(x)
         v = self.to_v(x)
+        
 
         #since i'm not using the flass attention use the normal attention 
         self.normal_attention(q , k , v)
@@ -117,7 +119,7 @@ class CrossAttention(nn.Module) :
     # for the normal function 
     def normal_attention(self , q:torch.Tensor , k:torch.Tensor , v:torch.Tensor) : 
         q = q.view(*q.shape[:2], self.n_head , -1)
-        K = k.view(*k.shape[:2] , self.n_head , -1)
+        k = k.view(*k.shape[:2] , self.n_head , -1)
         v = v.view(*v.shape[:2] , self.n_head , -1)
 
         attn = torch.einsum('bihd,bjhd->bhij', q , k) * self.scale

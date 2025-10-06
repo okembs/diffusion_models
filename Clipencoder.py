@@ -2,6 +2,7 @@ import torch
 from torch import nn 
 from attentionVariant import SelfAttention , CrossAttention
 
+#converts the token text  to embedddings for it to generate the image
 class CLIPEmbedding(nn.Module) : 
     def __init__(self, n_vocab:int , n_embd:int , n_token:int):
         super().__init__()
