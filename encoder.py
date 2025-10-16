@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from attentionVariant import SelfAttention , CrossAttention
 from UnetArchitecture import ResBlock , normalization
 from typing import List
-
+import dataclasses
 #this will contain the vae encoder 
 
 class VaeEncoder(nn.Module) : 
@@ -52,22 +52,16 @@ class VaeEncoder(nn.Module) :
             for module in self : 
                 if getattr(module , 'stride' , None) == (2 ,2):
                     x = F.pad(x , (0 ,1 , 1 , 0)) 
-                x = module() 
-                
+                x = module()  
                 #batch size
                 mean , log_variance = torch.chunk(x , 2 , dim=1)
                 log_variance = torch.clamp(log_variance , -30 , 20)
                 variance = log_variance.exp()
                 stdev = variance.sqrt()
-
                 # Z = N( 0 , 1) -->X =  N(mean , variance)
                 x = mean + stdev * noise
                 x *= 0.8125 
                 return x
-
-
-
-
 
 # the vae residual block
 class VAE_ResidualBlock(nn.Module):
@@ -116,9 +110,7 @@ class VAE_AttentionBlock(nn.Module) :
         x = x.view((n , c , h * w))
         #Batch size features height and width
         x = x.transpose(-1 , -2)
-
         x =  self.attention(x)
-
         x = x.transpose(-1 , -2)
         #Batch size 
         x = x.view((n, c , h ,w))
@@ -146,7 +138,6 @@ class Autoencoder(nn.Module) :
         self.quant_conv = nn.Conv2d(2 * z_channels , 2 * emb_channels , 1)
 # post convolution after the quantum spaced is mapped 
         self.post_quant_conv = nn.Conv2d(emb_channels , z_channels , 1)
-
 
 # for the encode
     def encode(self , img:torch.Tensor) : 
@@ -190,7 +181,6 @@ class Encoder(nn.Module) :
             down.downsample = DownSample(channels)
         else : 
             down.downsample = nn.Identity()
-
         self.down.append(down)
 
         #final resnet block with attention
@@ -198,7 +188,6 @@ class Encoder(nn.Module) :
         self.mid_block1 = ResBlock(channels= channels , out_channels=channels , d_temd=None )    # ResnetBlock(channels , channels)
         self.mid_attn = CrossAttention(320 , 5 , 64 , 64)
         self.mid_block2 = ResBlock(channels=channels ,out_channels=channels , d_temd=None)
-
         #map to embeddings space with a 3 x 3 convolution
         self.norm_out = normalization(channels)
         self.conv_out = nn.Conv2d(channels , 2 * z_channels , 3 , stride=1, padding=1)
@@ -209,13 +198,11 @@ class Encoder(nn.Module) :
         for down in self.down : 
             for block in down.block : 
                 x = block(x)
-
             x = down.downsample(x)
             #final resnetblock with attention 
         x = self.mid_block1(x)
         x = self.mid_attn(x)
         x = self.mid_block2(x)
-
         #normalize and map to the embeddings space 
         x = self.norm_out(x)
         x = swish(x)
@@ -234,14 +221,12 @@ class Decoder(nn.Module) :
         self.z_channels = z_channels
         self.channels_multipliers = channels_multipliers
         self.channels = channels
-        
         #define the rest here
         n_resolution = len(channels_multipliers)
         channels_list = [m * channels for m in channels_multipliers]
         print(channels_list)
         channels = channels_list[-1]
         self.conv_in = nn.Conv2d(z_channels , channels , 3 , padding=1 , stride=1)
-
         #the resnet block with attention 
         self.mid = nn.Module()
         self.mid_block1 = ResBlock(channels=channels ,out_channels=channels , d_temd=None)
@@ -269,13 +254,11 @@ class Decoder(nn.Module) :
             #map to image with a 3 x 3 convolution
             self.norm_out = normalization(channels)
             self.conv_out = nn.Conv2d(channels , out_channels , stride=1 , padding=3)
-
     def forward(self, x:torch.Tensor) : 
         h = self.conv_in(x)
         h = self.mid_block1(x)
         h =  self.mid_attn1(x)
         h = self.mid_block2(x)
-
         #Top level blocks
         for up in reversed(self.up) : 
             # for the Resnet Block
@@ -294,16 +277,31 @@ class GaussanDistribution(nn.Module) :
 
 
 class ResnetBlock : 
-    pass
+    def __init__(self , in_channels, d_temb , out_channels:None = int):
+        #the first layers and normalization 
+        self.in_layers = nn.Sequential(
+            normalization(in_channels),
+            nn.SiLU(),
+            nn.Conv2d(in_channels , out_channels , 3 , padding=1)
+        )
+        pass 
 
 class DownSample(nn.Module) : 
-    pass
+    def __init__(self, in_channels:int) :
+        self.net = nn.Conv2d(in_channels , in_channels , 3, stride=2 , padding=1)
+    def forward(self , x:torch.Tensor) : 
+        x = self.net(x)
+        return x
 
-class Upsample(nn.Module) : 
-    pass
-
+class Upsample(nn.Module) :
+    def __init__(self , channels:int) : 
+        self.conv = nn.Conv2d(channels , channels , 3 , padding=1)
+    def forward(self , x:torch.Tensor) : 
+        x = F.interpolate(x , scale_factor=2 , mode='nearest')
+        return  self.conv(x)
 
 #for the swish activation 
 # we use the swish activation because it better for optimization than relu
 def swish(x:torch.Tensor) : 
     return x *  torch.sigmoid(x)
+

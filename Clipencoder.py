@@ -1,8 +1,9 @@
 import torch 
 from torch import nn 
-from attentionVariant import SelfAttention , CrossAttention
-
+from attentionVariant import SelfAttention , CrossAttention 
 #converts the token text  to embedddings for it to generate the image
+# we are supposed to use the tiktoken , but we want to use the openai tokenizer that will make the text embeddings to make it
+from transformers import CLIPTokenizer , CLIPTextModel
 class CLIPEmbedding(nn.Module) : 
     def __init__(self, n_vocab:int , n_embd:int , n_token:int):
         super().__init__()
@@ -12,7 +13,6 @@ class CLIPEmbedding(nn.Module) :
 
     def forward(self , tokens) : 
          x= self.token_embeddings(tokens)
-
          x += self.position_embeddings
 
 
@@ -30,15 +30,12 @@ class CLipPlayer(nn.Module) :
 
     def forward(self , x) : 
         residue = x 
-
         #batch size  , seq len 
         x = self.layernorm_1(x)
         x = self.layernorm_2(x)
-
         #batch size seq_len , dim
         x = self.attention(x)
         x += residue
-
         residue = x 
         x = self.layernorm_2(x)
         x = self.linear_1(x)
@@ -50,21 +47,32 @@ class CLipPlayer(nn.Module) :
     
 
 class CLIP(nn.Module) : 
-    def __init__(self):
+    def __init__(self , device ,  max_text_length:80):
+        self.device = device 
+        self.max_text_length = max_text_length
         super().__init__()
-        self.embeddings = CLIPEmbedding(49408 , 786 , 77)
-        self.layers = nn.ModuleList([
-            CLipPlayer(12 , 786) for i in range(12)
-        ])
-        self.layernorm = nn.LayerNorm(768)
+   #    self.tokenizer = tiktoken.encoding_for_model('gpt-4o')
 
-    def forward(self , tokens): 
-        tokens = tokens.type(torch.long)
-        # Batch_size --> Batch size, seq Len , Dim
-        state = self.embeddings(tokens)
 
-        #apply the encoder layers similar  to the transformer encoders
-        for layers in self.layers : 
-            state = layers(state)
-        output = self.layernorm(state)
-        return output
+class CLipTextEmbeddings(nn.Module) : 
+    def __init__(self ,  clip_model_version: str = 'openai/clip-vit-large-patch14' , device:str = "cuda:0" , max_length_str:int = 80) : 
+        super().__init__()
+        self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_version)
+        self.device = device
+        self.clip_str_version = clip_model_version
+        self.max_length_str = max_length_str
+        #define the clip transformer 
+        self.transformer = CLIPTextModel.from_pretrained(self.clip_str_version)
+
+    def forward(self, prompts:str) : 
+        #tokenize the networks here 
+        batch_encoding = self.tokenizer(prompts ,
+                                         truncation=True ,
+                                         max_length=self.max_length_str,return_length=True
+                                        ,n_overflowing_tokens=False , padding="max length" , 
+                                        return_tensors='pt')
+        # get the tokenizer ids 
+        tokens = batch_encoding['inputs_ids'].to(self.device)
+        #return the clips embeddings 
+        return  self.transformer(input_ids =tokens).last_hidden_state
+

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy
 from attentionVariant import CrossAttention , SelfAttention
-from labml_nn.diffusion.ddpm.utils import gather
+#from labml_nn.diffusion.ddpm.utils import gather
 
 #the u net architecture contains the input_channels , out_channels , channels and n_resBlock
 #the attention levels: are the levels the model is supposed to perform
@@ -128,9 +128,6 @@ class Unet(nn.Module) :
 
        return self.out(x)
      
-              
-              
-
 
 # define the timesetpeEmdedSequential 
 #note this module can contain  different module like the attention block , resnlock and so on
@@ -215,7 +212,6 @@ class Upsample(nn.Module) :
    def __init__(self , channels:int) :
           super().__init__()
           self.conv = nn.Conv2d(channels , channels , 3, padding=1)
-          
    def forward(self , x:torch.Tensor) : 
       x = F.interpolate(x , scale_factor=2 , mode='nearest')
       return self.conv(x)
@@ -228,7 +224,7 @@ class GroupNorm32(nn.GroupNorm) :
 # a function for the group normalization
 def normalization(channels) : 
    return GroupNorm32(32 , channels)
-
+ 
 #test sinusodial for the timestepembeddings 
 def test_time_embeddings() : 
    plt.figure(figsize=(15 ,5))
@@ -243,55 +239,7 @@ def test_time_embeddings() :
 print(test_time_embeddings())
 \
 
-#the schedular for the unet arcitecture
-# the denoisoing sampler  for the unet architecture 
-#for denoising the image  or the unet architecture
-# Denoising diffusion probabilistic models
-#eps:epilson , n_steps is t
-class DDPM(nn.Module) : 
-    def __init__(self, eps_model:nn.Module , n_steps: int , device:torch.device ):
-          super().__init__()
-          self.eps_model = eps_model
-          self.n_steps = n_steps
-          self.beta = torch.linspace(0.0001, 0.02 , n_steps).to(device)
-          self.alpah = 1 - self.beta
-          self.alpah_bar = torch.cumprod(self.alpah , dim=1)
-          self.sigma = self.beta
 
-    def q_xt_0(self, x:torch.Tensor , t:torch.Tensor):  
-       mean = gather(self.alpah_bar , t) ** 0.5 * x
-       var = 1 - gather(self.aplha_bar , t)
-       return mean , var
-    #add noise to the data
-    def q_sample(self , x0:torch.Tensor , t:torch.Tensor , eps ) : 
-       if eps is None : 
-          eps = torch.rand_like(x0)
-          mean , var = self.q_xt_0(x0 , t)
-          return mean + (var ** 0.5) * eps
-       #denoise the data
-    def p_sample(self , xt:torch.Tensor , t:torch.Tensor) : 
-       eps_theta = self.eps_model(xt , t)
-       alpha_bar = gather(self.alpah_bar ,t)
-       alpha = gather(self.alpah , t)
-       eps_coef = ( 1 - alpha) / ( 1 - alpha) ** .5
-       mean = 1 / (alpha ** 0.5) * (xt - eps_coef * eps_theta)
-       var = gather(self.sigma , t )
-       eps = torch.randn(xt.shape , device=xt.device)
-       #sample 
-       return mean + (var ** .5) * eps 
-    
-    def loss(self , x:torch.Tensor, noise = None) : 
-        batch_size = x.shape[0]
-        t = torch.randint(0 , self.n_steps, (batch_size) , device=x.device , dtype=torch.long)
-        if noise is None : 
-           noise = torch.randn_like(x)
-        xt = self.q_sample(x , t , eps=noise)
-        eps_theta = self.eps_model(xt , t)
-        return F.mse_loss(noise , eps_theta)
-      
-         
-          
-
-       
+   
     
        
