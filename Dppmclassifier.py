@@ -54,6 +54,7 @@ class DDPM(nn.Module) :
         eps_theta = self.eps_model(xt , t)
         return F.mse_loss(noise , eps_theta)
       
+   
 # the gather function
 def gather(const:torch.Tensor , t:torch.Tensor) : 
    c = const.gather(-1 , t)
