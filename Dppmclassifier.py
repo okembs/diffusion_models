@@ -1,13 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.functional as F
+from dataclasses import dataclass
 #the schedular for the unet arcitecture
 # the denoisoing sampler  for the unet architecture 
 #for denoising the image  or the unet architecture
 # Denoising diffusion probabilistic models
 #eps:epilson , n_steps is t
 # this fucntion is used for denoising the data
-class DDPM(nn.Module) : 
+@dataclass
+class DDPM(nn.Module) :
     def __init__(self, eps_model:nn.Module , n_steps: int , device:torch.device ):
           super().__init__()
           self.eps_model = eps_model
@@ -53,8 +55,32 @@ class DDPM(nn.Module) :
         xt = self.q_sample(x , t , eps=noise)
         eps_theta = self.eps_model(xt , t)
         return F.mse_loss(noise , eps_theta)
-      
-   
+    
+    # implement the schedule , the linear schdeule and cosine beta schedule 
+    def linear_scheduler(num_timesteps) :
+          beta_start:float = 1e - 4
+          beta_end = 0.02
+          betas = torch.linspace(beta_start , beta_end , num_timesteps)
+          return betas
+         
+      # for the cosine  schdeular
+    def cosine_beta_schedular(num_timestemps , s=0.0001) : 
+        steps =  num_timestemps + 1 
+        x = torch.linspace(0 , num_timestemps , steps) / num_timestemps
+        print(f"the x linespace in the  cosine_beta scheduler: {x}")
+        # apply the cosine function here 
+        alpha_cumprod =  torch.cos(((x + num_timestemps ) + ( 1 + s )) * torch.pi * 0.5) ** 2
+        print(f"alpha cumprod for the cosine beta scheduler : {alpha_cumprod}")
+        #nromalize the cummulative prodcut 
+        alpha_cumprod = alpha_cumprod / alpha_cumprod[0]
+        # calculate the alphas bar (alpha_t = alpha_bar / alpha_bar_{t - 1})
+        beta =  1 - alpha_cumprod[1:] /  alpha_cumprod[:-1]
+        betas = torch.clip(beta , 0.001 , 0.999)
+        return betas 
+        
+        # used for sampling or addding images there
+    def Sample() : 
+        pass
 # the gather function
 def gather(const:torch.Tensor , t:torch.Tensor) : 
    c = const.gather(-1 , t)

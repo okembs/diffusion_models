@@ -45,7 +45,6 @@ class Text2image:
                 un_cond = None 
             # sample and get the latent space
         x = self.sampler
-                
 
 
         

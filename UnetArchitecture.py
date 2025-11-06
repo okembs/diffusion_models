@@ -10,15 +10,27 @@ import numpy
 from attentionVariant import CrossAttention , SelfAttention
 #from labml_nn.diffusion.ddpm.utils import gather
 
-#the u net architecture contains the input_channels , out_channels , channels and n_resBlock
+#the u net architecture contains the
+#  input_channels , 
+# out_channels , 
+# channels : is the base channels count for the model
+#  n_resBlock : number of residual blocks 
 #the attention levels: are the levels the model is supposed to perform
 #  n_heads : number of attention heads in the transformer 
 #  , 
-# tf_layers : the number of tf layers
-# d_cond
+# tf_layers : the number of transformer layers
+# d_cond : is the size of the conditional embeddings space in the transformer
 
 class Unet(nn.Module) : 
-    def __init__(self,  in_channels:int , out_channels:int , channels_multi:list[int]  ,channels:int ,  n_resBlock:int , attention_levels:list[int], n_heads:int, tf_layers:int = 1 , d_cond:int = 768 ):
+    def __init__(self,  
+                 in_channels:int , 
+                 out_channels:int , 
+                 channels_multi:list[int]  ,
+                 channels:int ,  n_resBlock:int , 
+                 attention_levels:list[int], 
+                 n_heads:int, 
+                 tf_layers:int = 1 , 
+                 d_cond:int = 768 ):
      super().__init__()
      self.channels  = channels
      self.in_channels = in_channels
